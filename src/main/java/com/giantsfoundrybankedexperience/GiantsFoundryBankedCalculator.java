@@ -23,9 +23,6 @@
  * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 package com.giantsfoundrybankedexperience;
-
-import com.google.common.collect.ArrayListMultimap;
-import com.google.common.collect.Multimap;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
 import java.text.DecimalFormat;
@@ -37,7 +34,6 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.stream.Collectors;
 import javax.swing.JButton;
 import javax.swing.JLabel;
 import javax.swing.JPanel;
@@ -49,23 +45,14 @@ import net.runelite.api.Skill;
 import net.runelite.client.config.ConfigManager;
 import net.runelite.client.game.ItemManager;
 import net.runelite.client.ui.DynamicGridLayout;
-import net.runelite.client.util.AsyncBufferedImage;
 import net.runelite.client.util.Text;
-import com.giantsfoundrybankedexperience.components.ExpandableSection;
 import com.giantsfoundrybankedexperience.components.GridItem;
-import com.giantsfoundrybankedexperience.components.ModifyPanel;
-import com.giantsfoundrybankedexperience.components.SecondaryGrid;
 import com.giantsfoundrybankedexperience.components.SelectionGrid;
 import com.giantsfoundrybankedexperience.components.SelectionListener;
-import com.giantsfoundrybankedexperience.components.textinput.BoostInput;
 import com.giantsfoundrybankedexperience.components.textinput.UICalculatorInputArea;
-import com.giantsfoundrybankedexperience.data.Activity;
 import com.giantsfoundrybankedexperience.data.BankedItem;
 import com.giantsfoundrybankedexperience.data.ExperienceItem;
-import com.giantsfoundrybankedexperience.data.ItemStack;
-import com.giantsfoundrybankedexperience.data.modifiers.Modifier;
-import com.giantsfoundrybankedexperience.data.modifiers.ModifierComponent;
-import com.giantsfoundrybankedexperience.data.modifiers.Modifiers;
+import com.giantsfoundrybankedexperience.data.Metal;
 
 @Slf4j
 public class GiantsFoundryBankedCalculator extends JPanel
@@ -80,29 +67,18 @@ public class GiantsFoundryBankedCalculator extends JPanel
 	private final ItemManager itemManager;
 	private final ConfigManager configManager;
 
-	// Some activities output a ExperienceItem and may need to be included in the calculable qty
-	// Using multimap for cases where there are multiple items linked directly to one item, use recursion for otherwise
-	private final Multimap<ExperienceItem, BankedItem> linkedMap = ArrayListMultimap.create();
-
 	private final Map<ExperienceItem, BankedItem> bankedItemMap = new LinkedHashMap<>();
 	private final JLabel totalXpLabel = new JLabel();
 	private final JLabel xpToNextLevelLabel = new JLabel();
-	private final ModifyPanel modifyPanel;
+	private final JLabel effectBarsBankedMetal1 = new JLabel();
+	private final JLabel effectBarsBankedMetal2 = new JLabel();
 	private SelectionGrid itemGrid = new SelectionGrid();
-	private SecondaryGrid secondaryGrid;
-	private ExpandableSection modifierSection;
-	private ExpandableSection secondarySection;
 	private final JButton refreshBtn;
 
 	// Store items from all sources in the same map
 	private final Map<Integer, Integer> currentMap = new HashMap<>();
 	// keep sources separate for recreating currentMap when one updates
 	private final Map<Integer, Map<Integer, Integer>> inventoryMap = new HashMap<>();
-
-	// Keep a reference to enabled modifiers so recreating tooltips is faster.
-	@Getter
-	private final Set<Modifier> enabledModifiers = new HashSet<>();
-	private final List<ModifierComponent> modifierComponents = new ArrayList<>();
 
 	@Getter
 	private final Set<String> ignoredItems;
@@ -111,10 +87,13 @@ public class GiantsFoundryBankedCalculator extends JPanel
 	private Skill currentSkill;
 
 	@Getter
-	private int skillLevel, skillExp, endLevel, endExp;
+	private Metal currentMetal1 = null;
 
 	@Getter
-	private final BoostInput boostInput = new BoostInput(this::updateBoost);
+	private Metal currentMetal2 = null;
+
+	@Getter
+	private int skillLevel, skillExp, endLevel, endExp;
 
 	GiantsFoundryBankedCalculator(UICalculatorInputArea uiInput, Client client, GiantsFoundryBankedExperienceConfig config,
 					ItemManager itemManager, ConfigManager configManager)
@@ -129,9 +108,6 @@ public class GiantsFoundryBankedCalculator extends JPanel
 
 		setLayout(new DynamicGridLayout(0, 1, 0, 5));
 
-		// Panel used to modify banked item values
-		this.modifyPanel = new ModifyPanel(this, itemManager);
-
 		this.refreshBtn = new JButton("Refresh Calculator");
 		refreshBtn.setFocusable(false);
 		refreshBtn.addMouseListener((new MouseAdapter()
@@ -141,7 +117,7 @@ public class GiantsFoundryBankedCalculator extends JPanel
 			{
 				if (e.getButton() == MouseEvent.BUTTON1)
 				{
-					open(currentSkill, true);
+					open(currentSkill, currentMetal1, currentMetal2, true);
 				}
 			}
 		}));
@@ -151,7 +127,6 @@ public class GiantsFoundryBankedCalculator extends JPanel
 			@Override
 			public boolean selected(BankedItem item)
 			{
-				modifyPanel.setBankedItem(item);
 				return true;
 			}
 
@@ -174,33 +149,23 @@ public class GiantsFoundryBankedCalculator extends JPanel
 	/**
 	 * opens the Banked Calculator for this skill
 	 */
-	void open(final Skill newSkill)
+	void open(final Skill newSkill, final Metal newMetal1, final Metal newMetal2)
 	{
-		open(newSkill, false);
+		open(newSkill, newMetal1, newMetal2, false);
 	}
 
 	/**
 	 * opens the Banked Calculator for this skill
 	 */
-	void open(final Skill newSkill, final boolean refresh)
+	void open(final Skill newSkill, final Metal newMetal1, final Metal newMetal2, final boolean refresh)
 	{
-		if (!refresh && newSkill.equals(currentSkill))
-		{
-			return;
-		}
-
-		if (!newSkill.equals(currentSkill))
-		{
-			boostInput.setInputValue(0);
-			itemGrid.setSelectedItem(null);
-		}
-
+		
 		this.currentSkill = newSkill;
+		this.currentMetal1 = newMetal1 != null ? newMetal1 : currentMetal1;
+		this.currentMetal2 = newMetal2 != null ? newMetal2 : currentMetal2;
 		removeAll();
-		modifierComponents.clear();
-		enabledModifiers.clear();
+		itemGrid.setSelectedItem(null);
 		refreshBtn.setVisible(false);
-		secondaryGrid = null; // prevents the Secondaries section from being added early by recreateItemGrid
 
 		if (currentMap.size() <= 0)
 		{
@@ -222,48 +187,6 @@ public class GiantsFoundryBankedCalculator extends JPanel
 		uiInput.setTargetXPInput(endExp);
 
 		recreateBankedItemMap();
-
-		// Add XP modifiers
-		for (final Modifier modifier : Modifiers.getBySkill(this.currentSkill))
-		{
-			final ModifierComponent c = modifier.generateModifierComponent();
-			c.setModifierConsumer((mod, newState) ->
-			{
-				// Only need to check other modifiers if this one is enabled
-				if (newState)
-				{
-					// Disable any non-compatible modifications
-					modifierComponents.forEach(component ->
-					{
-						// Modifier not enabled or modifiers are compatible with each other
-						if (!component.isModifierEnabled() || (component.getModifier().compatibleWith(mod) && mod.compatibleWith(component.getModifier())))
-						{
-							return;
-						}
-
-						component.setModifierEnabled(false);
-					});
-				}
-
-				modifierUpdated();
-			});
-			modifierComponents.add(c);
-		}
-
-		if (modifierComponents.size() > 0)
-		{
-			boolean wasClosed = modifierSection != null && !modifierSection.isOpen();
-			modifierSection = new ExpandableSection(
-				"Modifiers",
-				"Toggles the different ways activity/experience gains can be modified",
-				modifierComponents.stream()
-					.map(ModifierComponent::getComponent)
-					.collect(Collectors.toList())
-			);
-			modifierSection.setOpen(!wasClosed);
-			add(modifierSection);
-		}
-
 		recreateItemGrid();
 
 		// This should only be null if there are no items in their bank for this skill
@@ -273,32 +196,11 @@ public class GiantsFoundryBankedCalculator extends JPanel
 		}
 		else
 		{
-			if (config.limitToCurrentLevel())
-			{
-				add(boostInput);
-			}
 			add(totalXpLabel);
 			add(xpToNextLevelLabel);
-			add(modifyPanel);
+			add(effectBarsBankedMetal1);
+			add(effectBarsBankedMetal2);
 			add(itemGrid);
-
-			if (config.showSecondaries())
-			{
-				secondaryGrid = new SecondaryGrid(this, itemGrid.getPanelMap().values());
-				boolean wasClosed = secondarySection != null && !secondarySection.isOpen();
-				secondarySection = new ExpandableSection(
-					"Secondaries",
-					"Shows a breakdown of how many secondaries are required for all enabled activities",
-					secondaryGrid
-				);
-
-				secondarySection.setOpen(!wasClosed);
-
-				if (secondaryGrid.getSecMap().size() > 0)
-				{
-					add(secondarySection);
-				}
-			}
 		}
 
 		add(refreshBtn);
@@ -310,9 +212,24 @@ public class GiantsFoundryBankedCalculator extends JPanel
 	private void recreateBankedItemMap()
 	{
 		bankedItemMap.clear();
-		linkedMap.clear();
 
-		final Collection<ExperienceItem> items = ExperienceItem.getBySkill(currentSkill);
+		final Collection<ExperienceItem> items = new ArrayList<>();
+
+		if(currentMetal1 == null && currentMetal2 == null) {
+			final Collection<ExperienceItem> smithingItems = ExperienceItem.getBySkill(Skill.SMITHING);
+			items.addAll(smithingItems);
+		}
+
+		if(currentMetal1 != null) {
+			final Collection<ExperienceItem> metal1Items = ExperienceItem.getByMetal(currentMetal1);
+			items.addAll(metal1Items);
+		}
+
+		if(currentMetal2 != null) {
+			final Collection<ExperienceItem> metal2Items = ExperienceItem.getByMetal(currentMetal2);
+			items.addAll(metal2Items);
+		}
+
 		log.debug("Experience items for the {} Skill: {}", currentSkill.getName(), items);
 
 		for (final ExperienceItem item : items)
@@ -321,10 +238,10 @@ public class GiantsFoundryBankedCalculator extends JPanel
 			final BankedItem banked = new BankedItem(item, currentMap.getOrDefault(item.getItemID(), 0));
 			bankedItemMap.put(item, banked);
 
-			Activity a = item.getSelectedActivity();
-			if (a == null || (config.limitToCurrentLevel() && (skillLevel + boostInput.getInputValue()) < a.getLevel()))
+			/*Activity a = item.getSelectedActivity();
+			if (a == null)
 			{
-				final List<Activity> activities = Activity.getByExperienceItem(item, config.limitToCurrentLevel() ? (skillLevel + boostInput.getInputValue()) : -1);
+				final List<Activity> activities = Activity.getByExperienceItem(item, skillLevel);
 				if (activities.size() == 0)
 				{
 					item.setSelectedActivity(null);
@@ -333,16 +250,9 @@ public class GiantsFoundryBankedCalculator extends JPanel
 
 				item.setSelectedActivity(activities.get(0));
 				a = activities.get(0);
-			}
-
-			// If this activity outputs another experienceItem they should be linked
-			if (a.getLinkedItem() != null)
-			{
-				linkedMap.put(a.getLinkedItem(), banked);
-			}
+			}*/
 		}
 		log.debug("Banked Item Map: {}", bankedItemMap);
-		log.debug("Linked Map: {}", linkedMap);
 	}
 
 	/**
@@ -353,21 +263,7 @@ public class GiantsFoundryBankedCalculator extends JPanel
 		// Selection grid will only display values with > 0 items
 		itemGrid.recreateGrid(this, bankedItemMap.values(), itemManager);
 
-		// Select the first item in the list
-		modifyPanel.setBankedItem(itemGrid.getSelectedItem());
-
 		calculateBankedXpTotal();
-	}
-
-	public double getItemXpRate(final BankedItem bankedItem)
-	{
-		final Activity selected = bankedItem.getItem().getSelectedActivity();
-		if (selected == null)
-		{
-			return 0;
-		}
-
-		return selected.getXpRate(enabledModifiers);
 	}
 
 	/**
@@ -384,20 +280,14 @@ public class GiantsFoundryBankedCalculator extends JPanel
 			return qty;
 		}
 
-		final Map<ExperienceItem, Integer> linked = createLinksMap(item);
-		final int linkedQty = linked.entrySet().stream().mapToInt((entry) ->
-		{
-			// Account for activities that output multiple of a specific item per action
-			final ItemStack output = entry.getKey().getSelectedActivity().getOutput();
-			return (int) (entry.getValue() * (output != null ? output.getQty() : 1));
-		}).sum();
-
-		return qty + linkedQty;
+		return qty;
 	}
 
 	private void calculateBankedXpTotal()
 	{
 		double total = 0.0;
+		int metal1BarTotal = 0;
+		int metal2BarTotal = 0;
 		for (final GridItem i : itemGrid.getPanelMap().values())
 		{
 			if (i.isIgnored())
@@ -406,13 +296,26 @@ public class GiantsFoundryBankedCalculator extends JPanel
 			}
 
 			final BankedItem bi = i.getBankedItem();
-			total += getItemQty(bi) * getItemXpRate(bi);
+			total += getItemQty(bi) * 10;//BIG HUGE LINE
+			bi.getItem().getBars();
+			if (bi.getItem().getMetal() == currentMetal1) {
+				metal1BarTotal += (bi.getItem().getBars() * getItemQty(bi));
+			}
+			if (bi.getItem().getMetal() == currentMetal2) {
+				metal2BarTotal += (bi.getItem().getBars() * getItemQty(bi));
+			}
 		}
 
 		endExp = Math.min(Experience.MAX_SKILL_XP, (int) (skillExp + total));
 		endLevel = Experience.getLevelForXp(endExp);
 
 		totalXpLabel.setText("Total Banked: " + XP_FORMAT_COMMA.format(total) + "xp");
+		if (currentMetal1 != null) {
+			effectBarsBankedMetal1.setText(currentMetal1.getName() + " Bars Banked: " + metal1BarTotal);
+		}
+		if (currentMetal2 != null) {
+			effectBarsBankedMetal2.setText(currentMetal2.getName() + " Bars Banked: " + metal2BarTotal);	
+		}
 		uiInput.setTargetLevelInput(endLevel);
 		uiInput.setTargetXPInput(endExp);
 
@@ -420,157 +323,8 @@ public class GiantsFoundryBankedCalculator extends JPanel
 		final int nextLevelXp = Experience.getXpForLevel(nextLevel) - endExp;
 		xpToNextLevelLabel.setText("Level " + nextLevel + " requires: " + XP_FORMAT_COMMA.format(nextLevelXp) + "xp");
 
-		// Refresh secondaries whenever the exp is updated
-		refreshSecondaries();
-
 		revalidate();
 		repaint();
-	}
-
-	/**
-	 * Used to select an Activity for an item
-	 * @param i BankedItem item the activity is tied to
-	 * @param a Activity the selected activity
-	 */
-	public void activitySelected(final BankedItem i, final Activity a)
-	{
-		final ExperienceItem item = i.getItem();
-		final Activity old = item.getSelectedActivity();
-		if (a.equals(old))
-		{
-			return;
-		}
-
-		item.setSelectedActivity(a);
-		saveActivity(i.getItem());
-
-		// Cascade activity changes if necessary.
-		if (config.cascadeBankedXp() && a.shouldUpdateLinked(old))
-		{
-			// Update Linked Map
-			linkedMap.remove(old.getLinkedItem(), i);
-			linkedMap.put(a.getLinkedItem(), i);
-			// Update all items the old activity effects
-			updateLinkedItems(old);
-			// Update all the items the new activity effects
-			updateLinkedItems(a);
-		}
-
-		modifyPanel.setBankedItem(i);
-		itemGrid.getPanelMap().get(i).updateToolTip(enabledModifiers);
-
-		// recalculate total xp
-		calculateBankedXpTotal();
-	}
-
-	/**
-	 * Updates the item quantities of all forward linked items
-	 * @param activity the starting {@link Activity} to start the cascade from
-	 */
-	private void updateLinkedItems(final Activity activity)
-	{
-		if (activity == null)
-		{
-			return;
-		}
-
-		boolean foundSelected = false;		// Found an item currently being displayed in the ModifyPanel
-		boolean gridCountChanged = false;
-
-		ExperienceItem i = activity.getLinkedItem();
-		while (i != null)
-		{
-			final BankedItem bi = bankedItemMap.get(i);
-			if (bi == null)
-			{
-				break;
-			}
-
-			final int qty = getItemQty(bi);
-			final boolean stackable = qty > 1 || bi.getItem().getItemInfo().isStackable();
-			final AsyncBufferedImage img = itemManager.getImage(bi.getItem().getItemID(), qty, stackable);
-
-			final GridItem gridItem = itemGrid.getPanelMap().get(bi);
-			final int oldQty = gridItem.getAmount();
-			gridCountChanged |= ((oldQty == 0 && qty > 0) || (oldQty > 0 && qty == 0));
-			gridItem.updateIcon(img, qty);
-			gridItem.updateToolTip(enabledModifiers);
-
-			foundSelected |= itemGrid.getSelectedItem().equals(bi);
-
-			final Activity a = bi.getItem().getSelectedActivity();
-			if (a == null)
-			{
-				break;
-			}
-
-			i = a.getLinkedItem();
-		}
-
-		if (gridCountChanged)
-		{
-			itemGrid.refreshGridDisplay();
-		}
-
-		if (foundSelected)
-		{
-			// Refresh current modify panel if the cascade effects it
-			modifyPanel.setBankedItem(itemGrid.getSelectedItem());
-		}
-	}
-
-	/**
-	 * Creates a Map of ExperienceItem to bank qty for all items that are being linked to this one
-	 * @param item starting item
-	 * @return Map of ExperienceItem to bank qty
-	 */
-	public Map<ExperienceItem, Integer> createLinksMap(final BankedItem item)
-	{
-		final Map<ExperienceItem, Integer> qtyMap = new HashMap<>();
-
-		final Activity a = item.getItem().getSelectedActivity();
-		if (a == null)
-		{
-			return qtyMap;
-		}
-
-		final Collection<BankedItem> linkedBank = linkedMap.get(item.getItem());
-		if (linkedBank == null || linkedBank.size() == 0)
-		{
-			return qtyMap;
-		}
-
-		for (final BankedItem linked : linkedBank)
-		{
-			// Check if the item is ignored in the grid
-			if (ignoredItems.contains(linked.getItem().name()))
-			{
-				continue;
-			}
-
-			final int qty = linked.getQty();
-			if (qty > 0)
-			{
-				qtyMap.put(linked.getItem(), qty);
-			}
-			qtyMap.putAll(createLinksMap(linked));
-		}
-
-		return qtyMap;
-	}
-
-	private void modifierUpdated()
-	{
-		enabledModifiers.clear();
-		enabledModifiers.addAll(modifierComponents.stream()
-			.filter(ModifierComponent::isModifierEnabled)
-			.map(ModifierComponent::getModifier)
-			.collect(Collectors.toSet())
-		);
-
-		itemGrid.getPanelMap().values().forEach(item -> item.updateToolTip(enabledModifiers));
-		modifyPanel.setBankedItem(modifyPanel.getBankedItem());
-		calculateBankedXpTotal();
 	}
 
 	public int getItemQtyFromBank(final int id)
@@ -586,7 +340,7 @@ public class GiantsFoundryBankedCalculator extends JPanel
 		{
 			return;
 		}
-		open(currentSkill, true);
+		open(currentSkill, currentMetal1, currentMetal2, true);
 
 		// Reset experience level stuff
 		uiInput.setCurrentLevelInput(1);
@@ -615,42 +369,6 @@ public class GiantsFoundryBankedCalculator extends JPanel
 		}
 	}
 
-	private void refreshSecondaries()
-	{
-		if (secondarySection == null || secondaryGrid == null)
-		{
-			return;
-		}
-
-		final boolean wasVisible = secondaryGrid.getSecMap().size() > 0;
-		secondaryGrid.updateSecMap(itemGrid.getPanelMap().values());
-		final boolean shouldBeVisible = secondaryGrid.getSecMap().size() > 0;
-
-		if (shouldBeVisible != wasVisible)
-		{
-			if (shouldBeVisible)
-			{
-				add(secondarySection, getComponentCount() - 1);
-			}
-			else
-			{
-				remove(secondarySection);
-			}
-		}
-	}
-
-	private void saveActivity(final ExperienceItem item)
-	{
-		configManager.setConfiguration(GiantsFoundryBankedExperiencePlugin.CONFIG_GROUP, GiantsFoundryBankedExperiencePlugin.ACTIVITY_CONFIG_KEY + item.name(), item.getSelectedActivity().name());
-	}
-
-	private void updateBoost(Integer value)
-	{
-		// If the item grid wasn't added then the boost input is not visible
-		recreateBankedItemMap();
-		recreateItemGrid();
-	}
-
 	private void ignoreBankedItem(BankedItem item, boolean ignored)
 	{
 		final String name = item.getItem().name();
@@ -662,8 +380,6 @@ public class GiantsFoundryBankedCalculator extends JPanel
 		{
 			ignoredItems.remove(name);
 		}
-
-		updateLinkedItems(item.getItem().getSelectedActivity());
 	}
 
 	private void toggleIgnoreBankedItem(BankedItem item)

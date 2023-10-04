@@ -39,10 +39,7 @@ import lombok.Getter;
 import lombok.Setter;
 import net.runelite.client.ui.ColorScheme;
 import net.runelite.client.util.AsyncBufferedImage;
-import com.giantsfoundrybankedexperience.GiantsFoundryBankedCalculator;
-import com.giantsfoundrybankedexperience.data.Activity;
 import com.giantsfoundrybankedexperience.data.BankedItem;
-import com.giantsfoundrybankedexperience.data.modifiers.Modifier;
 
 @Getter
 public class GridItem extends JLabel
@@ -79,7 +76,7 @@ public class GridItem extends JLabel
 	private final JMenuItem INCLUDE_ALL_OPTION = new JMenuItem(INCLUDE_ALL);
 
 	GridItem(final BankedItem item, final AsyncBufferedImage icon, final int amount,
-			final Collection<Modifier> modifiers, final boolean ignore, Consumer<Boolean> bulkIgnoreCallback)
+			final boolean ignore, Consumer<Boolean> bulkIgnoreCallback)
 	{
 		super("");
 
@@ -93,7 +90,6 @@ public class GridItem extends JLabel
 		this.setHorizontalAlignment(SwingConstants.CENTER);
 
 		updateIcon(icon, amount);
-		updateToolTip(modifiers);
 
 		this.addMouseListener(new MouseAdapter()
 		{
@@ -184,37 +180,6 @@ public class GridItem extends JLabel
 	{
 		icon.addTo(this);
 		this.amount = amount;
-	}
-
-	public void updateToolTip(final Collection<Modifier> modifiers)
-	{
-		this.setToolTipText(buildToolTip(modifiers));
-		final Activity selectedActivity = bankedItem.getItem().getSelectedActivity();
-		if (selectedActivity != null)
-		{
-			this.rng = selectedActivity.isRngActivity();
-			this.setBackground(getBackgroundColor());
-		}
-	}
-
-	private String buildToolTip(final Collection<Modifier> modifiers)
-	{
-		String tip = "<html>" + bankedItem.getItem().getItemInfo().getName();
-
-		final Activity a = bankedItem.getItem().getSelectedActivity();
-		if (a != null)
-		{
-			final double xp = a.getXpRate(modifiers);
-			tip += "<br/>Activity: " +  a.getName();
-			tip += "<br/>Xp/Action: " + GiantsFoundryBankedCalculator.XP_FORMAT_COMMA.format(xp);
-			tip += "<br/>Total Xp: " + GiantsFoundryBankedCalculator.XP_FORMAT_COMMA.format(xp * amount);
-		}
-		else
-		{
-			tip += "<br/>Unusable at current level";
-		}
-
-		return tip + "</html>";
 	}
 
 	public void setIgnore(Boolean ignored)

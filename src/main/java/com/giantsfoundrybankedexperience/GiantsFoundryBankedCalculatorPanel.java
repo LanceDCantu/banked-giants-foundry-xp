@@ -25,14 +25,21 @@
 package com.giantsfoundrybankedexperience;
 
 import java.awt.Color;
+import java.awt.Dimension;
 import java.awt.GridBagConstraints;
 import java.awt.GridBagLayout;
+import java.awt.List;
 import java.awt.event.ItemEvent;
-import java.awt.image.BufferedImage;
+import java.util.Collection;
 import java.util.Map;
+
 import javax.swing.ImageIcon;
 import javax.swing.JComboBox;
 import javax.swing.border.EmptyBorder;
+import javax.swing.plaf.basic.BasicComboBoxUI;
+
+import org.apache.commons.lang3.StringUtils;
+
 import lombok.extern.slf4j.Slf4j;
 import net.runelite.api.Client;
 import net.runelite.api.Skill;
@@ -41,10 +48,13 @@ import net.runelite.client.game.ItemManager;
 import net.runelite.client.game.SkillIconManager;
 import net.runelite.client.ui.ColorScheme;
 import net.runelite.client.ui.PluginPanel;
+import net.runelite.client.util.AsyncBufferedImage;
+
 import com.giantsfoundrybankedexperience.components.combobox.ComboBoxIconEntry;
 import com.giantsfoundrybankedexperience.components.combobox.ComboBoxIconListRenderer;
 import com.giantsfoundrybankedexperience.components.textinput.UICalculatorInputArea;
-import com.giantsfoundrybankedexperience.data.Activity;
+import com.giantsfoundrybankedexperience.data.ExperienceItem;
+import com.giantsfoundrybankedexperience.data.Metal;
 
 @Slf4j
 public class GiantsFoundryBankedCalculatorPanel extends PluginPanel
@@ -69,45 +79,77 @@ public class GiantsFoundryBankedCalculatorPanel extends PluginPanel
 		calculator = new GiantsFoundryBankedCalculator(inputs, client, config, itemManager, configManager);
 
 		// Create the Skill dropdown with icons
-		final JComboBox<ComboBoxIconEntry> dropdown = new JComboBox<>();
-		dropdown.setFocusable(false); // To prevent an annoying "focus paint" effect
-		dropdown.setForeground(Color.WHITE);
-		dropdown.setMaximumRowCount(Activity.BANKABLE_SKILLS.size());
-		final ComboBoxIconListRenderer renderer = new ComboBoxIconListRenderer();
-		renderer.setDefaultText("Select a Skill...");
-		dropdown.setRenderer(renderer);
+		final JComboBox<ComboBoxIconEntry> barOneDropdown = new JComboBox<>();
+		barOneDropdown.setFocusable(false);
+		barOneDropdown.setForeground(Color.WHITE);
+		barOneDropdown.setMaximumRowCount(6);
+		barOneDropdown.setBorder(new EmptyBorder(0, 0, 0, 0));
+		final ComboBoxIconListRenderer barOneRenderer = new ComboBoxIconListRenderer();
+		barOneRenderer.setDefaultText("Select Metal #1 ...");
+		barOneDropdown.setRenderer(barOneRenderer);
 
-		for (final Skill skill : Activity.BANKABLE_SKILLS)
+		// Create the Skill dropdown with icons
+		final JComboBox<ComboBoxIconEntry> barTwoDropdown = new JComboBox<>();
+		barTwoDropdown.setFocusable(false);
+		barTwoDropdown.setForeground(Color.WHITE);
+		barTwoDropdown.setMaximumRowCount(6);
+		barTwoDropdown.setBorder(new EmptyBorder(0, 0, 0, 0));
+		final ComboBoxIconListRenderer barTwoRenderer = new ComboBoxIconListRenderer();
+		barTwoRenderer.setDefaultText("Select Metal #2 ...");
+		barTwoDropdown.setRenderer(barTwoRenderer);
+
+		Collection<ExperienceItem> barTypes = ExperienceItem.getByCategory("Bars");
+
+		for (final ExperienceItem bar : barTypes)
 		{
-			final BufferedImage img = skillIconManager.getSkillImage(skill, true);
-			final ComboBoxIconEntry entry = new ComboBoxIconEntry(new ImageIcon(img), skill.getName(), skill);
-			dropdown.addItem(entry);
+			final AsyncBufferedImage img = itemManager.getImage(bar.getItemID(), 1, false);
+			final String metalName = StringUtils.substringBefore(bar.name(), "_");
+			final String name = metalName.substring(0,1) + metalName.substring(1).toLowerCase();
+			final ComboBoxIconEntry entry = new ComboBoxIconEntry(new ImageIcon(img), name, bar.getMetal());
+			barOneDropdown.addItem(entry);
+			barTwoDropdown.addItem(entry);
 		}
 
-		dropdown.addItemListener(e ->
+		barOneDropdown.setSelectedIndex(-1);
+		barTwoDropdown.setSelectedIndex(-1);
+
+		barOneDropdown.addItemListener(e ->
 		{
 			if (e.getStateChange() == ItemEvent.SELECTED)
 			{
 				final ComboBoxIconEntry source = (ComboBoxIconEntry) e.getItem();
-				if (source.getData() instanceof Skill)
+				if (source.getData() instanceof Metal)
 				{
-					final Skill skill = (Skill) source.getData();
-					this.calculator.open(skill);
+					final Metal metal = (Metal) source.getData();
+					this.calculator.open(Skill.SMITHING, metal, null);
 				}
 			}
 		});
 
-		dropdown.setSelectedIndex(-1);
+		barTwoDropdown.addItemListener(e ->
+		{
+			if (e.getStateChange() == ItemEvent.SELECTED)
+			{
+				final ComboBoxIconEntry source = (ComboBoxIconEntry) e.getItem();
+				if (source.getData() instanceof Metal)
+				{
+					final Metal metal = (Metal) source.getData();
+					this.calculator.open(Skill.SMITHING, null, metal);
+				}
+			}
+		});
 
 		final GridBagConstraints c = new GridBagConstraints();
 		c.fill = GridBagConstraints.HORIZONTAL;
 		c.weightx = 1;
 		c.gridx = 0;
 		c.gridy = 0;
-
-		add(dropdown, c);
-		c.gridy++;
+		
 		add(inputs, c);
+		c.gridy++;
+		add(barOneDropdown, c);
+		c.gridy++;
+		add(barTwoDropdown, c);
 		c.gridy++;
 		add(calculator, c);
 	}

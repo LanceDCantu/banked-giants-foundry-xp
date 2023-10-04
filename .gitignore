@@ -3,7 +3,9 @@ build
 .idea/
 .project
 .settings/
+.vscode/
 .classpath
 nbactions.xml
 nb-configuration.xml
 nbproject/
+bin/

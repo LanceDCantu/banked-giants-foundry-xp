@@ -27,10 +27,8 @@ import net.runelite.client.plugins.PluginDescriptor;
 import net.runelite.client.ui.ClientToolbar;
 import net.runelite.client.ui.NavigationButton;
 import net.runelite.client.util.ImageUtil;
-import com.giantsfoundrybankedexperience.data.Activity;
 import com.giantsfoundrybankedexperience.data.ExperienceItem;
 import com.giantsfoundrybankedexperience.data.WidgetInventoryInfo;
-import com.giantsfoundrybankedexperience.data.modifiers.Modifiers;
 
 @Slf4j
 @PluginDescriptor(
@@ -41,10 +39,8 @@ public class GiantsFoundryBankedExperiencePlugin extends Plugin
 	private static final BufferedImage ICON = ImageUtil.loadImageResource(GiantsFoundryBankedExperiencePlugin.class, "banked.png");
 	private static final Map<Integer, Integer> EMPTY_MAP = new HashMap<>();
 	public static final String CONFIG_GROUP = "giantsfoundrybankedexperience";
-	private static final String VAULT_CONFIG_KEY = "grabFromSeedVault";
 	private static final String INVENTORY_CONFIG_KEY = "grabFromInventory";
 	private static final String LOOTING_BAG_CONFIG_KEY = "grabFromLootingBag";
-	private static final String FOSSIL_CHEST_CONFIG_KEY = "grabFromFossilChest";
 	public static final String ACTIVITY_CONFIG_KEY = "ITEM_";
 	private static final int LOOTING_BAG_ID = 516;
 
@@ -110,9 +106,6 @@ public class GiantsFoundryBankedExperiencePlugin extends Plugin
 					case CONNECTION_LOST:
 					case HOPPING:
 						ExperienceItem.prepareItemCompositions(itemManager);
-						Activity.prepareItemCompositions(itemManager);
-						Modifiers.prepare(itemManager);
-						loadSavedActivities();
 						prepared = true;
 						return true;
 					default:
@@ -143,17 +136,11 @@ public class GiantsFoundryBankedExperiencePlugin extends Plugin
 		final int inventoryId;
 		switch (event.getKey())
 		{
-			case VAULT_CONFIG_KEY:
-				inventoryId = InventoryID.SEED_VAULT.getId();
-				break;
 			case INVENTORY_CONFIG_KEY:
 				inventoryId = InventoryID.INVENTORY.getId();
 				break;
 			case LOOTING_BAG_CONFIG_KEY:
 				inventoryId = LOOTING_BAG_ID;
-				break;
-			case FOSSIL_CHEST_CONFIG_KEY:
-				inventoryId = WidgetInventoryInfo.FOSSIL_CHEST.getId();
 				break;
 			default:
 				return;
@@ -166,7 +153,6 @@ public class GiantsFoundryBankedExperiencePlugin extends Plugin
 	public void onItemContainerChanged(ItemContainerChanged ev)
 	{
 		if (ev.getContainerId() == InventoryID.BANK.getId()
-			|| (ev.getContainerId() == InventoryID.SEED_VAULT.getId() && config.grabFromSeedVault())
 			|| (ev.getContainerId() == InventoryID.INVENTORY.getId() && config.grabFromInventory())
 			|| (ev.getContainerId() == LOOTING_BAG_ID && config.grabFromLootingBag()))
 		{
@@ -177,11 +163,6 @@ public class GiantsFoundryBankedExperiencePlugin extends Plugin
 	@Subscribe
 	public void onWidgetLoaded(WidgetLoaded e)
 	{
-		if (!config.grabFromFossilChest())
-		{
-			return;
-		}
-
 		final WidgetInventoryInfo widgetInfo = WidgetInventoryInfo.getByGroupId(e.getGroupId());
 		if (widgetInfo == null)
 		{
@@ -268,7 +249,7 @@ public class GiantsFoundryBankedExperiencePlugin extends Plugin
 		}
 	}
 
-	private void loadSavedActivities()
+	/*private void loadSavedActivities()
 	{
 		for (final ExperienceItem item : ExperienceItem.values())
 		{
@@ -287,5 +268,5 @@ public class GiantsFoundryBankedExperiencePlugin extends Plugin
 				}
 			}
 		}
-	}
+	}*/
 }
